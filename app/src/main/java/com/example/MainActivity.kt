@@ -121,19 +121,6 @@ class MainActivity : ComponentActivity() {
                                         unselectedTextColor = TextGray
                                     )
                                 )
-                                NavigationBarItem(
-                                    selected = currentTab == "admin",
-                                    onClick = { viewModel.currentTab.value = "admin" },
-                                    icon = { Icon(Icons.Default.Settings, contentDescription = "Admin") },
-                                    label = { Text("Admin") },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = PurpleActiveOn,
-                                        selectedTextColor = TextLight,
-                                        indicatorColor = PurpleActiveBg,
-                                        unselectedIconColor = TextGray,
-                                        unselectedTextColor = TextGray
-                                    )
-                                )
                             }
                         }
                     ) { innerPadding ->

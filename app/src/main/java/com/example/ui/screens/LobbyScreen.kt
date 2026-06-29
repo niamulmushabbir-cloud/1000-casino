@@ -50,6 +50,7 @@ fun LobbyScreen(
     
     val favoriteIds = remember(stats) { stats.filter { it.isFavorite }.map { it.gameId }.toSet() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    var avatarTapCount by remember { mutableStateOf(0) }
 
     Column(
         modifier = modifier
@@ -74,7 +75,14 @@ fun LobbyScreen(
                         .size(42.dp)
                         .clip(RoundedCornerShape(21.dp))
                         .background(SurfaceLighter)
-                        .border(1.5.dp, PurplePrimary, RoundedCornerShape(21.dp)),
+                        .border(1.5.dp, PurplePrimary, RoundedCornerShape(21.dp))
+                        .clickable {
+                            avatarTapCount++
+                            if (avatarTapCount >= 5) {
+                                viewModel.currentTab.value = "admin"
+                                avatarTapCount = 0
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(

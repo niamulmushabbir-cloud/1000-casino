@@ -50,22 +50,34 @@ fun AdminScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = "Admin Panel",
-                tint = PurplePrimary,
-                modifier = Modifier
-                    .size(32.dp)
-                    .padding(end = 8.dp)
-            )
-            Text(
-                text = "ADMIN DASHBOARD",
-                color = TextLight,
-                fontWeight = FontWeight.Black,
-                fontSize = 22.sp
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Admin Panel",
+                    tint = PurplePrimary,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .padding(end = 8.dp)
+                )
+                Text(
+                    text = "ADMIN DASHBOARD",
+                    color = TextLight,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 22.sp
+                )
+            }
+            IconButton(
+                onClick = { viewModel.currentTab.value = "lobby" }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close Admin Panel",
+                    tint = TextLight
+                )
+            }
         }
 
         if (!isUnlocked) {
