@@ -1,0 +1,6 @@
+{
+  "name": "Grand 1000 Casino",
+  "description": "Premium virtual casino lobby featuring 1,000 themed slot rooms, classic Blackjack, Roulette, Video Poker, Crash Rocket, and Plinko games.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
