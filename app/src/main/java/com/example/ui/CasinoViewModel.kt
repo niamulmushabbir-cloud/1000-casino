@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.AndroidViewModel
@@ -205,8 +206,28 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             // Final outcome
-            val finalReels = List(3) {
-                List(3) { symbols.random() }
+            val finalReels = when (adminLuckMode.value) {
+                "player_wins" -> {
+                    val jackpotSym = if (symbols.contains("777")) "777" else symbols.first()
+                    listOf(
+                        listOf(jackpotSym, symbols.random(), symbols.random()),
+                        listOf(jackpotSym, jackpotSym, symbols.random()),
+                        listOf(jackpotSym, symbols.random(), jackpotSym)
+                    )
+                }
+                "house_wins" -> {
+                    val distinctSyms = symbols.shuffled().take(9)
+                    listOf(
+                        listOf(distinctSyms[0], distinctSyms[1], distinctSyms[2]),
+                        listOf(distinctSyms[3], distinctSyms[4], distinctSyms[5]),
+                        listOf(distinctSyms[6], distinctSyms[7], distinctSyms[8])
+                    )
+                }
+                else -> {
+                    List(3) {
+                        List(3) { symbols.random() }
+                    }
+                }
             }
             slotReels.value = finalReels
 
@@ -334,10 +355,50 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
             dealerHand.clear()
 
             // Deal first cards
-            playerHand.add(deck.removeAt(0))
-            dealerHand.add(deck.removeAt(0))
-            playerHand.add(deck.removeAt(0))
-            dealerHand.add(deck.removeAt(0))
+            if (adminLuckMode.value == "player_wins") {
+                val aces = deck.filter { it.value == "A" }
+                val tens = deck.filter { it.rank == 10 }
+                val low = deck.filter { it.rank in 2..6 }
+                
+                val p1 = aces.firstOrNull() ?: deck.removeAt(0)
+                deck.remove(p1)
+                val p2 = tens.firstOrNull() ?: deck.removeAt(0)
+                deck.remove(p2)
+                
+                val d1 = low.firstOrNull() ?: deck.removeAt(0)
+                deck.remove(d1)
+                val d2 = low.getOrNull(1) ?: deck.removeAt(0)
+                deck.remove(d2)
+
+                playerHand.add(p1)
+                dealerHand.add(d1)
+                playerHand.add(p2)
+                dealerHand.add(d2)
+            } else if (adminLuckMode.value == "house_wins") {
+                val aces = deck.filter { it.value == "A" }
+                val tens = deck.filter { it.rank == 10 }
+                val low = deck.filter { it.rank in 5..8 }
+
+                val d1 = aces.firstOrNull() ?: deck.removeAt(0)
+                deck.remove(d1)
+                val d2 = tens.firstOrNull() ?: deck.removeAt(0)
+                deck.remove(d2)
+                
+                val p1 = low.firstOrNull() ?: deck.removeAt(0)
+                deck.remove(p1)
+                val p2 = low.getOrNull(1) ?: deck.removeAt(0)
+                deck.remove(p2)
+
+                playerHand.add(p1)
+                dealerHand.add(d1)
+                playerHand.add(p2)
+                dealerHand.add(d2)
+            } else {
+                playerHand.add(deck.removeAt(0))
+                dealerHand.add(deck.removeAt(0))
+                playerHand.add(deck.removeAt(0))
+                dealerHand.add(deck.removeAt(0))
+            }
 
             recalcBlackjackScores()
             
@@ -516,7 +577,43 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             // Final number
-            val finalNum = Random.nextInt(37)
+            val finalNum = when (adminLuckMode.value) {
+                "player_wins" -> {
+                    var bestNum = Random.nextInt(37)
+                    var maxPayout = -1L
+                    for (num in 0..36) {
+                        val color = getRouletteColor(num)
+                        var payoutForNum = 0L
+                        for ((betType, betWager) in selectedRouletteBets) {
+                            payoutForNum += calculateRouletteBetPayout(betType, betWager, num, color)
+                        }
+                        if (payoutForNum > maxPayout) {
+                            maxPayout = payoutForNum
+                            bestNum = num
+                        }
+                    }
+                    bestNum
+                }
+                "house_wins" -> {
+                    var worstNum = 0
+                    var minPayout = Long.MAX_VALUE
+                    for (num in 0..36) {
+                        val color = getRouletteColor(num)
+                        var payoutForNum = 0L
+                        for ((betType, betWager) in selectedRouletteBets) {
+                            payoutForNum += calculateRouletteBetPayout(betType, betWager, num, color)
+                        }
+                        if (payoutForNum < minPayout) {
+                            minPayout = payoutForNum
+                            worstNum = num
+                        }
+                    }
+                    worstNum
+                }
+                else -> {
+                    Random.nextInt(37)
+                }
+            }
             val finalColor = getRouletteColor(finalNum)
             rouletteWinningNumber.value = finalNum
             rouletteWinningColor.value = finalColor
@@ -601,7 +698,30 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
             pokerPayout.value = 0
 
             // Deal 5 cards
-            repeat(5) { pokerHand.add(deck.removeAt(0)) }
+            if (adminLuckMode.value == "player_wins") {
+                val royalSpades = listOf("10", "J", "Q", "K", "A")
+                val customHand = mutableListOf<CasinoCard>()
+                for (v in royalSpades) {
+                    val card = deck.firstOrNull { it.suit == "♠" && it.value == v } ?: CasinoCard("♠", v, if (v == "A") 11 else 10)
+                    customHand.add(card)
+                    deck.remove(card)
+                }
+                pokerHand.addAll(customHand)
+            } else if (adminLuckMode.value == "house_wins") {
+                val junkValues = listOf("2", "4", "6", "8", "10")
+                val suits = listOf("♥", "♦", "♣", "♠", "♣")
+                val customHand = mutableListOf<CasinoCard>()
+                for (i in 0..4) {
+                    val v = junkValues[i]
+                    val s = suits[i]
+                    val card = deck.firstOrNull { it.suit == s && it.value == v } ?: CasinoCard(s, v, v.toInt())
+                    customHand.add(card)
+                    deck.remove(card)
+                }
+                pokerHand.addAll(customHand)
+            } else {
+                repeat(5) { pokerHand.add(deck.removeAt(0)) }
+            }
             pokerState.value = "deal"
             pokerResultLabel.value = "Select cards to HOLD and click DRAW!"
         }
@@ -745,13 +865,23 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         crashJob = viewModelScope.launch {
-            // Determine crash point: weighted towards low values, occasionally very high
-            val rand = Random.nextFloat()
-            val crashPoint = when {
-                rand < 0.15f -> 1.0f + Random.nextFloat() * 0.2f // 15% instant low crash
-                rand < 0.70f -> 1.2f + Random.nextFloat() * 2.5f // 55% average run (1.2 to 3.7)
-                rand < 0.95f -> 3.7f + Random.nextFloat() * 10.0f // 25% super run (3.7 to 13.7)
-                else -> 15.0f + Random.nextFloat() * 85.0f // 5% legendary high fly up to 100x!
+            // Determine crash point based on admin luck settings
+            val crashPoint = when (adminLuckMode.value) {
+                "player_wins" -> {
+                    15.0f + Random.nextFloat() * 85.0f
+                }
+                "house_wins" -> {
+                    1.00f
+                }
+                else -> {
+                    val rand = Random.nextFloat()
+                    when {
+                        rand < 0.15f -> 1.0f + Random.nextFloat() * 0.2f
+                        rand < 0.70f -> 1.2f + Random.nextFloat() * 2.5f
+                        rand < 0.95f -> 3.7f + Random.nextFloat() * 10.0f
+                        else -> 15.0f + Random.nextFloat() * 85.0f
+                    }
+                }
             }
 
             var tick = 1.0f
@@ -836,8 +966,18 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
                 delay(80L)
                 ball.y += 0.5f
                 
-                // Add tiny bounce physics noise left or right when encountering a peg row
-                val direction = if (Random.nextBoolean()) 0.05f else -0.05f
+                // Add tiny bounce physics noise left or right with optional admin rigging
+                val direction = when (adminLuckMode.value) {
+                    "player_wins" -> {
+                        if (ball.x < 0.5f) -0.06f else 0.06f
+                    }
+                    "house_wins" -> {
+                        if (ball.x < 0.5f) 0.06f else -0.06f
+                    }
+                    else -> {
+                        if (Random.nextBoolean()) 0.05f else -0.05f
+                    }
+                }
                 ball.x = (ball.x + direction).coerceIn(0.02f, 0.98f)
             }
 
@@ -864,5 +1004,75 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
         super.onCleared()
         crashJob?.cancel()
         plinkoJob?.cancel()
+    }
+
+    // ==========================================
+    // 7. ADMIN CONTROLLER SYSTEMS
+    // ==========================================
+    private val prefs = getApplication<Application>().getSharedPreferences("admin_prefs", android.content.Context.MODE_PRIVATE)
+    
+    val isAdminUnlocked = MutableStateFlow(false)
+    val adminLuckMode = MutableStateFlow(prefs.getString("luck_mode", "normal") ?: "normal")
+
+    fun unlockAdmin(password: String): Boolean {
+        val savedPassword = prefs.getString("admin_password", "admin123") ?: "admin123"
+        return if (password == savedPassword) {
+            isAdminUnlocked.value = true
+            true
+        } else {
+            false
+        }
+    }
+
+    fun lockAdmin() {
+        isAdminUnlocked.value = false
+    }
+
+    fun changeAdminPassword(newPassword: String) {
+        prefs.edit().putString("admin_password", newPassword).apply()
+    }
+
+    fun getAdminPassword(): String {
+        return prefs.getString("admin_password", "admin123") ?: "admin123"
+    }
+
+    fun setAdminLuckMode(mode: String) {
+        adminLuckMode.value = mode
+        prefs.edit().putString("luck_mode", mode).apply()
+    }
+
+    fun adminAddChips(amount: Long) {
+        viewModelScope.launch {
+            repository.updateChipsAndXp(amount, 0)
+        }
+    }
+
+    fun adminSetChips(amount: Long) {
+        viewModelScope.launch {
+            val session = repository.getOrCreateUserSession()
+            val diff = amount - session.chips
+            repository.updateChipsAndXp(diff, 0)
+        }
+    }
+
+    fun adminSetLevelAndXp(level: Int, xp: Long) {
+        viewModelScope.launch {
+            val database = CasinoDatabase.getDatabase(getApplication())
+            val session = repository.getOrCreateUserSession()
+            database.casinoDao().updateUserSession(
+                session.copy(
+                    level = level,
+                    xp = xp
+                )
+            )
+        }
+    }
+
+    fun adminResetDatabase() {
+        viewModelScope.launch {
+            val database = CasinoDatabase.getDatabase(getApplication())
+            database.clearAllTables()
+            repository.getOrCreateUserSession()
+        }
     }
 }

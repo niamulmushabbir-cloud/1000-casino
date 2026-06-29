@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
@@ -120,6 +121,19 @@ class MainActivity : ComponentActivity() {
                                         unselectedTextColor = TextGray
                                     )
                                 )
+                                NavigationBarItem(
+                                    selected = currentTab == "admin",
+                                    onClick = { viewModel.currentTab.value = "admin" },
+                                    icon = { Icon(Icons.Default.Settings, contentDescription = "Admin") },
+                                    label = { Text("Admin") },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = PurpleActiveOn,
+                                        selectedTextColor = TextLight,
+                                        indicatorColor = PurpleActiveBg,
+                                        unselectedIconColor = TextGray,
+                                        unselectedTextColor = TextGray
+                                    )
+                                )
                             }
                         }
                     ) { innerPadding ->
@@ -135,6 +149,10 @@ class MainActivity : ComponentActivity() {
                                 modifier = modifierWithPadding
                             )
                             "stats" -> StatsScreen(
+                                viewModel = viewModel,
+                                modifier = modifierWithPadding
+                            )
+                            "admin" -> AdminScreen(
                                 viewModel = viewModel,
                                 modifier = modifierWithPadding
                             )
