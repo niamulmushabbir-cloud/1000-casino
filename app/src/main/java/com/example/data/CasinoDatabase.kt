@@ -14,7 +14,8 @@ data class UserSession(
     val level: Int = 1,
     val lastSpinTimestamp: Long = 0,
     val dailyRewardStreak: Int = 0,
-    val selectedTheme: String = "VIP Gold"
+    val selectedTheme: String = "VIP Gold",
+    val loggedInUsername: String = "Guest"
 )
 
 @Entity(tableName = "game_stats")
@@ -36,6 +37,15 @@ data class TransactionHistory(
     val wager: Long,
     val payout: Long,
     val netGain: Long
+)
+
+@Entity(tableName = "player_accounts")
+data class PlayerAccount(
+    @PrimaryKey val username: String,
+    val passwordString: String,
+    val chips: Long = 10000,
+    val xp: Long = 0,
+    val level: Int = 1
 )
 
 // ------------------ DAO ------------------
@@ -77,13 +87,29 @@ interface CasinoDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: TransactionHistory)
+
+    // Player Account Queries
+    @Query("SELECT * FROM player_accounts ORDER BY username ASC")
+    fun getAllPlayerAccountsFlow(): Flow<List<PlayerAccount>>
+
+    @Query("SELECT * FROM player_accounts WHERE username = :username")
+    suspend fun getPlayerAccount(username: String): PlayerAccount?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPlayerAccount(account: PlayerAccount)
+
+    @Update
+    suspend fun updatePlayerAccount(account: PlayerAccount)
+
+    @Query("DELETE FROM player_accounts WHERE username = :username")
+    suspend fun deletePlayerAccount(username: String)
 }
 
 // ------------------ DATABASE ------------------
 
 @Database(
-    entities = [UserSession::class, GameStat::class, TransactionHistory::class],
-    version = 1,
+    entities = [UserSession::class, GameStat::class, TransactionHistory::class, PlayerAccount::class],
+    version = 2,
     exportSchema = false
 )
 abstract class CasinoDatabase : RoomDatabase() {
@@ -115,6 +141,28 @@ class CasinoRepository(private val casinoDao: CasinoDao) {
     val userSession: Flow<UserSession?> = casinoDao.getUserSessionFlow()
     val allGameStats: Flow<List<GameStat>> = casinoDao.getAllGameStatsFlow()
     val recentTransactions: Flow<List<TransactionHistory>> = casinoDao.getRecentTransactionsFlow()
+    val allPlayers: Flow<List<PlayerAccount>> = casinoDao.getAllPlayerAccountsFlow()
+
+    suspend fun getPlayerAccount(username: String): PlayerAccount? {
+        return casinoDao.getPlayerAccount(username)
+    }
+
+    suspend fun savePlayerAccount(account: PlayerAccount) {
+        casinoDao.insertPlayerAccount(account)
+    }
+
+    suspend fun updatePlayerAccount(account: PlayerAccount) {
+        casinoDao.updatePlayerAccount(account)
+    }
+
+    suspend fun deletePlayerAccount(username: String) {
+        casinoDao.deletePlayerAccount(username)
+    }
+
+    suspend fun updateSessionUsername(username: String) {
+        val current = getOrCreateUserSession()
+        casinoDao.updateUserSession(current.copy(loggedInUsername = username))
+    }
 
     suspend fun getOrCreateUserSession(): UserSession {
         var session = casinoDao.getUserSession()

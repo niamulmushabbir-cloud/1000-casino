@@ -26,6 +26,13 @@ data class PlinkoBall(
     val id: Int = Random.nextInt()
 )
 
+data class SubAdmin(
+    val id: Int,
+    val username: String,
+    val passcode: String,
+    val balance: Long
+)
+
 class CasinoViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: CasinoRepository
 
@@ -33,6 +40,14 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
     val userSession: StateFlow<UserSession?>
     val allGameStats: StateFlow<List<GameStat>>
     val recentTransactions: StateFlow<List<TransactionHistory>>
+    val allPlayers: StateFlow<List<PlayerAccount>>
+
+    // Sub admin and user accounts management
+    val subAdmins = MutableStateFlow<List<SubAdmin>>(emptyList())
+    val loggedInSubAdmin = MutableStateFlow<SubAdmin?>(null)
+    val activeRole = MutableStateFlow("none") // "none", "main_admin", "sub_admin"
+    val loginError = MutableStateFlow<String?>(null)
+    val loginSuccess = MutableStateFlow(false)
 
     init {
         val database = CasinoDatabase.getDatabase(application)
@@ -56,10 +71,59 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
             initialValue = emptyList()
         )
 
-        // Initialize user session on launch
+        allPlayers = repository.allPlayers.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+        // Initialize user session on launch and load sub admins
         viewModelScope.launch {
             repository.getOrCreateUserSession()
+            loadSubAdmins()
         }
+
+        // Auto-synchronize game changes back to player_accounts
+        viewModelScope.launch {
+            userSession.collect { session ->
+                if (session != null && session.loggedInUsername != "Guest") {
+                    val db = CasinoDatabase.getDatabase(application)
+                    val player = db.casinoDao().getPlayerAccount(session.loggedInUsername)
+                    if (player != null) {
+                        db.casinoDao().insertPlayerAccount(
+                            player.copy(
+                                chips = session.chips,
+                                xp = session.xp,
+                                level = session.level
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private val subAdminPrefs = application.getSharedPreferences("casino_sub_admin_prefs", Context.MODE_PRIVATE)
+
+    fun loadSubAdmins() {
+        val list = mutableListOf<SubAdmin>()
+        for (i in 1..20) {
+            val username = subAdminPrefs.getString("sub_admin_${i}_username", "sub$i") ?: "sub$i"
+            val passcode = subAdminPrefs.getString("sub_admin_${i}_passcode", "sub123") ?: "sub123"
+            val balance = subAdminPrefs.getLong("sub_admin_${i}_balance", 0L)
+            list.add(SubAdmin(id = i, username = username, passcode = passcode, balance = balance))
+        }
+        subAdmins.value = list
+    }
+
+    fun saveSubAdmin(subAdmin: SubAdmin) {
+        subAdminPrefs.edit().apply {
+            putString("sub_admin_${subAdmin.id}_username", subAdmin.username)
+            putString("sub_admin_${subAdmin.id}_passcode", subAdmin.passcode)
+            putLong("sub_admin_${subAdmin.id}_balance", subAdmin.balance)
+            apply()
+        }
+        loadSubAdmins()
     }
 
     // Lobby UI Navigation & Filters
@@ -1014,18 +1078,41 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
     val isAdminUnlocked = MutableStateFlow(false)
     val adminLuckMode = MutableStateFlow(prefs.getString("luck_mode", "normal") ?: "normal")
 
-    fun unlockAdmin(password: String): Boolean {
+    fun unlockAdminOrSubAdmin(usernameInput: String, passcode: String): String {
         val savedPassword = prefs.getString("admin_password", "admin123") ?: "admin123"
-        return if (password == savedPassword) {
+        
+        // 1. Check Main Admin
+        if (usernameInput.lowercase().trim() == "admin" && passcode == savedPassword) {
             isAdminUnlocked.value = true
-            true
-        } else {
-            false
+            activeRole.value = "main_admin"
+            loggedInSubAdmin.value = null
+            return "main_admin"
         }
+
+        // 2. Check Sub-Admins
+        val matchedSub = subAdmins.value.find { 
+            it.username.lowercase().trim() == usernameInput.lowercase().trim() && it.passcode == passcode 
+        }
+        if (matchedSub != null) {
+            isAdminUnlocked.value = true
+            activeRole.value = "sub_admin"
+            loggedInSubAdmin.value = matchedSub
+            return "sub_admin"
+        }
+
+        return "none"
+    }
+
+    // Keep compatibility for any standard unlock screen that doesn't supply a username (e.g. legacy passcode check)
+    fun unlockAdmin(password: String): Boolean {
+        val role = unlockAdminOrSubAdmin("admin", password)
+        return role != "none"
     }
 
     fun lockAdmin() {
         isAdminUnlocked.value = false
+        activeRole.value = "none"
+        loggedInSubAdmin.value = null
     }
 
     fun changeAdminPassword(newPassword: String) {
@@ -1034,6 +1121,168 @@ class CasinoViewModel(application: Application) : AndroidViewModel(application) 
 
     fun getAdminPassword(): String {
         return prefs.getString("admin_password", "admin123") ?: "admin123"
+    }
+
+    // --- User & Player Accounts Manager ---
+    fun performPlayerLogin(username: String, passwordString: String, isRegister: Boolean = false) {
+        viewModelScope.launch {
+            loginError.value = null
+            loginSuccess.value = false
+            
+            if (username.isBlank() || passwordString.isBlank()) {
+                loginError.value = "Username and password cannot be blank"
+                return@launch
+            }
+
+            // Save active session first
+            val currentSession = repository.getOrCreateUserSession()
+            if (currentSession.loggedInUsername != "Guest") {
+                val prevPlayer = repository.getPlayerAccount(currentSession.loggedInUsername)
+                if (prevPlayer != null) {
+                    repository.savePlayerAccount(
+                        prevPlayer.copy(
+                            chips = currentSession.chips,
+                            xp = currentSession.xp,
+                            level = currentSession.level
+                        )
+                    )
+                }
+            }
+
+            val player = repository.getPlayerAccount(username)
+            if (player != null) {
+                if (isRegister) {
+                    loginError.value = "Account already exists! Please log in."
+                } else {
+                    if (player.passwordString == passwordString) {
+                        // Success login
+                        val database = CasinoDatabase.getDatabase(getApplication())
+                        database.casinoDao().updateUserSession(
+                            currentSession.copy(
+                                chips = player.chips,
+                                xp = player.xp,
+                                level = player.level,
+                                loggedInUsername = player.username
+                            )
+                        )
+                        loginSuccess.value = true
+                    } else {
+                        loginError.value = "Incorrect password. Try again."
+                    }
+                }
+            } else {
+                if (isRegister) {
+                    // Register new account
+                    val newPlayer = PlayerAccount(
+                        username = username,
+                        passwordString = passwordString,
+                        chips = 10000,
+                        xp = 0,
+                        level = 1
+                    )
+                    repository.savePlayerAccount(newPlayer)
+                    val database = CasinoDatabase.getDatabase(getApplication())
+                    database.casinoDao().updateUserSession(
+                        currentSession.copy(
+                            chips = newPlayer.chips,
+                            xp = newPlayer.xp,
+                            level = newPlayer.level,
+                            loggedInUsername = newPlayer.username
+                        )
+                    )
+                    loginSuccess.value = true
+                } else {
+                    loginError.value = "Username not found. Check spelling or Register."
+                }
+            }
+        }
+    }
+
+    fun performPlayerLogout() {
+        viewModelScope.launch {
+            val currentSession = repository.getOrCreateUserSession()
+            if (currentSession.loggedInUsername != "Guest") {
+                val prevPlayer = repository.getPlayerAccount(currentSession.loggedInUsername)
+                if (prevPlayer != null) {
+                    repository.savePlayerAccount(
+                        prevPlayer.copy(
+                            chips = currentSession.chips,
+                            xp = currentSession.xp,
+                            level = currentSession.level
+                        )
+                    )
+                }
+            }
+            // Reset to Guest with default 10,000 chips
+            val database = CasinoDatabase.getDatabase(getApplication())
+            database.casinoDao().updateUserSession(
+                currentSession.copy(
+                    chips = 10000,
+                    xp = 0,
+                    level = 1,
+                    loggedInUsername = "Guest"
+                )
+            )
+        }
+    }
+
+    // --- Balance Transfer Operations ---
+    fun mainAdminAddCutUserBalance(playerUsername: String, amount: Long, isAdd: Boolean) {
+        viewModelScope.launch {
+            val player = repository.getPlayerAccount(playerUsername)
+            if (player != null) {
+                val newChips = if (isAdd) player.chips + amount else (player.chips - amount).coerceAtLeast(0)
+                repository.savePlayerAccount(player.copy(chips = newChips))
+
+                // Sync live session if active
+                val session = repository.getOrCreateUserSession()
+                if (session.loggedInUsername == playerUsername) {
+                    val database = CasinoDatabase.getDatabase(getApplication())
+                    database.casinoDao().updateUserSession(session.copy(chips = newChips))
+                }
+            }
+        }
+    }
+
+    fun mainAdminAddCutSubAdmin(subAdminId: Int, amount: Long, isAdd: Boolean): Boolean {
+        val list = subAdmins.value.toMutableList()
+        val idx = list.indexOfFirst { it.id == subAdminId }
+        if (idx != -1) {
+            val target = list[idx]
+            val newBalance = if (isAdd) target.balance + amount else (target.balance - amount).coerceAtLeast(0)
+            val updated = target.copy(balance = newBalance)
+            saveSubAdmin(updated)
+            return true
+        }
+        return false
+    }
+
+    fun subAdminTransferToUser(playerUsername: String, amount: Long): String {
+        val currentSub = loggedInSubAdmin.value ?: return "Not logged in as sub-admin"
+        if (amount <= 0) return "Amount must be positive"
+        if (currentSub.balance < amount) return "Insufficient sub-admin balance"
+
+        viewModelScope.launch {
+            val player = repository.getPlayerAccount(playerUsername)
+            if (player != null) {
+                // Deduct from SubAdmin wallet
+                val updatedSub = currentSub.copy(balance = currentSub.balance - amount)
+                saveSubAdmin(updatedSub)
+                loggedInSubAdmin.value = updatedSub // Update live session role state
+
+                // Add to Player wallet
+                val updatedPlayer = player.copy(chips = player.chips + amount)
+                repository.savePlayerAccount(updatedPlayer)
+
+                // Sync live session if active
+                val session = repository.getOrCreateUserSession()
+                if (session.loggedInUsername == playerUsername) {
+                    val database = CasinoDatabase.getDatabase(getApplication())
+                    database.casinoDao().updateUserSession(session.copy(chips = updatedPlayer.chips))
+                }
+            }
+        }
+        return "Success"
     }
 
     fun setAdminLuckMode(mode: String) {

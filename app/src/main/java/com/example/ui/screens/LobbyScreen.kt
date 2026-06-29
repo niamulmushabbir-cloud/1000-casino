@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -50,7 +51,7 @@ fun LobbyScreen(
     
     val favoriteIds = remember(stats) { stats.filter { it.isFavorite }.map { it.gameId }.toSet() }
     val keyboardController = LocalSoftwareKeyboardController.current
-    var avatarTapCount by remember { mutableStateOf(0) }
+    var showProfileDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -77,16 +78,13 @@ fun LobbyScreen(
                         .background(SurfaceLighter)
                         .border(1.5.dp, PurplePrimary, RoundedCornerShape(21.dp))
                         .clickable {
-                            avatarTapCount++
-                            if (avatarTapCount >= 5) {
-                                viewModel.currentTab.value = "admin"
-                                avatarTapCount = 0
-                            }
+                            showProfileDialog = true
                         },
                     contentAlignment = Alignment.Center
                 ) {
+                    val initials = (session?.loggedInUsername ?: "GS").take(2).uppercase()
                     Text(
-                        text = "VP",
+                        text = initials,
                         color = PurplePrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
@@ -102,7 +100,7 @@ fun LobbyScreen(
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Vip Player",
+                            text = session?.loggedInUsername ?: "Guest",
                             color = TextLight,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
@@ -408,6 +406,368 @@ fun LobbyScreen(
                         onFavToggle = { viewModel.toggleFavorite(game.id, isFav) },
                         onClick = { onGameSelected(game) }
                     )
+                }
+            }
+        }
+    }
+
+    if (showProfileDialog) {
+        Dialog(onDismissRequest = { showProfileDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceCharcoal),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(1.dp, PurplePrimary.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                var isLoginTab by remember { mutableStateOf(true) }
+                var showSystemGate by remember { mutableStateOf(false) }
+
+                var usernameInput by remember { mutableStateOf("") }
+                var passwordInput by remember { mutableStateOf("") }
+                
+                var systemUsername by remember { mutableStateOf("") }
+                var systemPasscode by remember { mutableStateOf("") }
+                var systemError by remember { mutableStateOf(false) }
+
+                val loginErr by viewModel.loginError.collectAsState()
+                val loginOk by viewModel.loginSuccess.collectAsState()
+
+                LaunchedEffect(loginOk) {
+                    if (loginOk) {
+                        showProfileDialog = false
+                        viewModel.loginSuccess.value = false
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Header with Close Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (showSystemGate) "SYSTEM GATEWAY" else "USER PROFILE",
+                            color = TextLight,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp
+                        )
+                        IconButton(onClick = { showProfileDialog = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = TextLight)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (showSystemGate) {
+                        // System Login (Admin / SubAdmin)
+                        Text(
+                            text = "Log in to backend controller / sub-admin terminal.",
+                            color = TextGray,
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = systemUsername,
+                            onValueChange = { systemUsername = it; systemError = false },
+                            label = { Text("System Username") },
+                            placeholder = { Text("admin / sub1") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextLight,
+                                unfocusedTextColor = TextLight,
+                                focusedBorderColor = PurplePrimary,
+                                unfocusedBorderColor = SurfaceLighter,
+                                focusedContainerColor = SurfaceCharcoal,
+                                unfocusedContainerColor = SurfaceCharcoal
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = systemPasscode,
+                            onValueChange = { systemPasscode = it; systemError = false },
+                            label = { Text("System Key (Passcode)") },
+                            placeholder = { Text("admin123 / sub123") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextLight,
+                                unfocusedTextColor = TextLight,
+                                focusedBorderColor = PurplePrimary,
+                                unfocusedBorderColor = SurfaceLighter,
+                                focusedContainerColor = SurfaceCharcoal,
+                                unfocusedContainerColor = SurfaceCharcoal
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        if (systemError) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "❌ Invalid username or passcode.",
+                                color = CrimsonRed,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { showSystemGate = false },
+                                colors = ButtonDefaults.buttonColors(containerColor = SurfaceLighter),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("BACK", color = TextLight, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val role = viewModel.unlockAdminOrSubAdmin(systemUsername, systemPasscode)
+                                    if (role != "none") {
+                                        viewModel.currentTab.value = "admin"
+                                        showProfileDialog = false
+                                    } else {
+                                        systemError = true
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = PurplePrimary),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1.5f)
+                            ) {
+                                Text("ACCESS", color = PurpleActiveOn, fontWeight = FontWeight.Black)
+                            }
+                        }
+                    } else if (session?.loggedInUsername != "Guest") {
+                        // User is Logged In
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(RoundedCornerShape(36.dp))
+                                .background(PurplePrimary.copy(alpha = 0.2f))
+                                .border(1.5.dp, PurplePrimary, RoundedCornerShape(36.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val initials = (session?.loggedInUsername ?: "GS").take(2).uppercase()
+                            Text(
+                                text = initials,
+                                color = PurplePrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 24.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = session?.loggedInUsername?.uppercase() ?: "",
+                            color = TextLight,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 20.sp
+                        )
+
+                        Text(
+                            text = "Level ${session?.level ?: 1} Elite Member",
+                            color = GoldPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // Stats Card
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceLighter),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Chips Wallet", color = TextGray, fontSize = 12.sp)
+                                    Text(
+                                        "${String.format("%,d", session?.chips ?: 0)} 🪙",
+                                        color = GoldPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Experience Points", color = TextGray, fontSize = 12.sp)
+                                    Text(
+                                        "${String.format("%,d", session?.xp ?: 0)} XP",
+                                        color = AccentCyan,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        Button(
+                            onClick = {
+                                viewModel.performPlayerLogout()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CrimsonRed),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("SIGN OUT", color = Color.White, fontWeight = FontWeight.Black)
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Hidden Admin System access key
+                        IconButton(
+                            onClick = { showSystemGate = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = "System Gate", tint = TextGray.copy(alpha = 0.3f), modifier = Modifier.size(14.dp))
+                        }
+                    } else {
+                        // User is Guest - Show Login/Register Tabs
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(SurfaceLighter, RoundedCornerShape(8.dp))
+                                .padding(4.dp)
+                        ) {
+                            Button(
+                                onClick = { isLoginTab = true },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isLoginTab) PurplePrimary else Color.Transparent
+                                ),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    "LOG IN",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = if (isLoginTab) PurpleActiveOn else TextGray
+                                )
+                            }
+
+                            Button(
+                                onClick = { isLoginTab = false },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (!isLoginTab) PurplePrimary else Color.Transparent
+                                ),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    "REGISTER",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = if (!isLoginTab) PurpleActiveOn else TextGray
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = usernameInput,
+                            onValueChange = { usernameInput = it },
+                            label = { Text("Player Username") },
+                            placeholder = { Text("player1") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextLight,
+                                unfocusedTextColor = TextLight,
+                                focusedBorderColor = PurplePrimary,
+                                unfocusedBorderColor = SurfaceLighter,
+                                focusedContainerColor = SurfaceCharcoal,
+                                unfocusedContainerColor = SurfaceCharcoal
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = passwordInput,
+                            onValueChange = { passwordInput = it },
+                            label = { Text("Secret Password") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextLight,
+                                unfocusedTextColor = TextLight,
+                                focusedBorderColor = PurplePrimary,
+                                unfocusedBorderColor = SurfaceLighter,
+                                focusedContainerColor = SurfaceCharcoal,
+                                unfocusedContainerColor = SurfaceCharcoal
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        if (loginErr != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "❌ $loginErr",
+                                color = CrimsonRed,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        Button(
+                            onClick = {
+                                viewModel.performPlayerLogin(usernameInput, passwordInput, isRegister = !isLoginTab)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PurplePrimary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                        ) {
+                            Text(
+                                text = if (isLoginTab) "ENTER LOBBY" else "CREATE ACCOUNT",
+                                color = PurpleActiveOn,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // System key gateway button
+                        IconButton(
+                            onClick = { showSystemGate = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = "System Gate", tint = TextGray.copy(alpha = 0.3f), modifier = Modifier.size(14.dp))
+                        }
+                    }
                 }
             }
         }
